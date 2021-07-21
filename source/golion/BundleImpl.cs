@@ -35,7 +35,6 @@ namespace golion
         private BundleActivator bundleActivator;
 
         private long bundleId;
-        private String location;
         private long lastModified;
         private String activatorClassName;
         private String requireBundles;
@@ -44,9 +43,6 @@ namespace golion
         private BundleContextImpl bundleContext;
 
         private IDictionary<String, String> headerDictionary;
-
-        private IDictionary<String, Assembly> refAssemblyDict = new Dictionary<String, Assembly>();
-
 
         //Bundle的主程序集
         private Assembly bundleAssembly;
@@ -74,28 +70,6 @@ namespace golion
         }
 
         /// <summary>
-        /// 增加代理程序集
-        /// </summary>
-        /// <param name="assembly"></param>
-        public static void AddBootDelegationAssembly(String assemblyName, Assembly assembly)
-        {
-            //if (allBundleRefAssemblyDict.ContainsKey(assemblyName)) return;
-            //allBundleRefAssemblyDict.Add(assemblyName, assembly);
-        }
-
-        private void addRefAssembly(String assemblyName, Assembly assembly)
-        {
-            if (!refAssemblyDict.ContainsKey(assemblyName))
-                refAssemblyDict.Add(assemblyName, assembly);
-            AddBootDelegationAssembly(assemblyName, assembly);
-        }
-
-        private void removeAllRefAssembly()
-        {
-            refAssemblyDict.Clear();
-        }
-
-        /// <summary>
         /// 得到Bundle依赖库的目录名称
         /// </summary>
         /// <returns></returns>
@@ -108,7 +82,8 @@ namespace golion
         {
             this.framework = framework;
             this.bundleDirectoryPath = bundleDirectoryPath;
-            this.bundleAssemblyFileName = Path.Combine(bundleDirectoryPath, BUNDLE_FILE_NAME);
+            var bundleFileNameFile = Path.Combine(bundleDirectoryPath, BUNDLE_FILE_NAME);
+            this.bundleAssemblyFileName = Path.Combine(bundleDirectoryPath, File.ReadAllText(bundleFileNameFile));
 
             init();
             //初始化
@@ -117,13 +92,9 @@ namespace golion
 
         private void init()
         {
-            //清除之前的所有程序集引用
-            this.removeAllRefAssembly();
-
             //读取基础信息
             DirectoryInfo di = new DirectoryInfo(bundleDirectoryPath);
             bundleId = long.Parse(di.Name);
-            //location = File.ReadAllText(Path.Combine(bundleDirectoryPath, BUNDLE_LOCATION_FILE_NAME), defaultEncoding);
             lastModified = File.GetLastWriteTime(bundleAssemblyFileName).Ticks;
 
             headerDictionary = new Dictionary<String, String>();
@@ -222,7 +193,7 @@ namespace golion
 
         public string getLocation()
         {
-            return location;
+            return bundleDirectoryPath;
         }
 
         public ServiceReference[] getRegisteredServices()
@@ -370,8 +341,9 @@ namespace golion
 
             this.activatorClassName = null;
             unloadAssemblyLoadContext();
-            bundleAssemblyLoadContext = new CollectibleAssemblyLoadContext($"Bundle[{getSymbolicName()}] AppDomain");
+            bundleAssemblyLoadContext = new CollectibleAssemblyLoadContext($"Bundle[Id:{getBundleId()}, Name:{getSymbolicName()}] AssemblyLoadContext");
             bundleAssemblyLoadContext.Resolving += BundleAssemblyLoadContext_Resolving;
+            bundleAssemblyLoadContext.Unloading += BundleAssemblyLoadContext_Unloading;
             loadAssemblys();
             this.activatorClassName = FindBundleActivatorClassName();            
             if (this.activatorClassName != null)
@@ -382,11 +354,16 @@ namespace golion
             framework.fireBundleEvent(new BundleEvent(BundleEvent.RESOLVED, this));
         }
 
+        private void BundleAssemblyLoadContext_Unloading(AssemblyLoadContext context)
+        {
+            log.Debug($"程序集加载上下文[{context.Name}]正在卸下。");
+        }
+
         private Assembly BundleAssemblyLoadContext_Resolving(AssemblyLoadContext sender, AssemblyName e)
         {
             String assemblyFullName = e.FullName;
 
-            //Console.WriteLine(String.Format("插件[{0}]正试图加载程序集[{1}].", bundle.getSymbolicName(), assemblyFullName));
+            log.Debug(String.Format("插件[{0}]正试图加载程序集[{1}].", getSymbolicName(), assemblyFullName));
             //如果是加载Bundle的主程序集
             if (bundleAssembly.FullName.Equals(assemblyFullName)) return bundleAssembly;
             //如果是依赖的Bundle的主程序集
@@ -413,7 +390,7 @@ namespace golion
                     assembly = sender.LoadFromStream(fs);
                 return assembly;
             }
-            //Console.WriteLine(String.Format("解析插件[{0}]时未能解析程序集[{1}]", bundle.getSymbolicName(), assemblyFullName));
+            log.Debug(String.Format("解析插件[{0}]时未能解析程序集[{1}]", getSymbolicName(), assemblyFullName));
             return null;
         }
 
@@ -455,9 +432,9 @@ namespace golion
         /// </summary>
         /// <returns></returns>
         public String GetAssemblies()
-        {
+        {            
             StringBuilder sb = new StringBuilder();
-            Assembly[] assemblies = refAssemblyDict.Values.ToArray();
+            Assembly[] assemblies = bundleAssemblyLoadContext.Assemblies.ToArray();
             for (int i = 0; i < assemblies.Length; i++)
             {
                 Assembly assembly = assemblies[i];
@@ -533,7 +510,6 @@ namespace golion
 
         private void unloadAssemblyLoadContext()
         {
-            bundleAssembly = null;
             if (bundleAssemblyLoadContext != null)
             {
                 bundleAssemblyLoadContext.Unload();
@@ -546,7 +522,7 @@ namespace golion
         public void uninstall()
         {
             framework.uninstall(this);
-            this.removeAllRefAssembly();
+            bundleAssembly = null;
             unloadAssemblyLoadContext();
         }
 

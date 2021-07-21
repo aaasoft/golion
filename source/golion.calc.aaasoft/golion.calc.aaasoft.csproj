@@ -18,4 +18,10 @@
     </ProjectReference>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="bundle">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

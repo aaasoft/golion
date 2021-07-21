@@ -11,6 +11,7 @@ using System.Diagnostics;
 using log4net;
 using golion.utils;
 using System.Threading;
+using System.Runtime.Loader;
 
 namespace golion.launch
 {
@@ -123,7 +124,6 @@ namespace golion.launch
         public void init()
         {
             Assembly selfAssembly = typeof(FrameworkImpl).Assembly;
-            BundleImpl.AddBootDelegationAssembly(selfAssembly.GetName().Name, selfAssembly);
 
             // 初始化配置参数
             if (configuration != null)
@@ -135,17 +135,8 @@ namespace golion.launch
                 if (configuration.ContainsKey(ORG_OSGI_FRAMEWORK_BOOTDELEGATION))
                 {
                     String[] bootDelegationNames = configuration[ORG_OSGI_FRAMEWORK_BOOTDELEGATION].Split(new Char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
-                    {
-                        String assemblyName = assembly.GetName().Name;
-                        foreach (String bootDelegationName in bootDelegationNames)
-                        {
-                            if (assemblyName.Equals(bootDelegationName))
-                            {
-                                BundleImpl.AddBootDelegationAssembly(assemblyName, assembly);
-                            }
-                        }
-                    }
+                    foreach (String bootDelegationName in bootDelegationNames)
+                        AssemblyLoadContext.Default.LoadFromAssemblyName(new AssemblyName(bootDelegationName));
                 }
             }
             // 设置插件目录
@@ -282,7 +273,6 @@ namespace golion.launch
             //开始解压
             FastZip fastZip = new FastZip();
             fastZip.ExtractZip(input, bundleDirectoryName, FastZip.Overwrite.Always, null, null, null, true, isInputStreamOwner);
-            File.WriteAllText(Path.Combine(bundleDirectoryName, BundleImpl.BUNDLE_LOCATION_FILE_NAME), location);
         }
 
         internal Bundle installBundle(string location, Stream input)
